@@ -5,6 +5,42 @@ use crate::{
 use cef::*;
 use crest_core::{BLANK, HOME, is_page_url, is_web_url};
 use std::{path::Path, rc::Weak};
+use url::Url;
+
+const HOME_WALLPAPER: &str = "crest://home/deep-water.webp";
+const HOME_SEARCH: &str = "crest://home/search?";
+
+fn home_query(url: &str) -> Option<String> {
+    let query = url.strip_prefix(HOME_SEARCH)?;
+    if query.len() > 32 * 1024 || query.contains('#') {
+        return None;
+    }
+    let mut params = url::form_urlencoded::parse(query.as_bytes());
+    let (name, value) = params.next()?;
+    (name == "q" && params.next().is_none()).then(|| value.into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::home_query;
+
+    #[test]
+    fn only_accepts_a_single_query_on_the_internal_search_route() {
+        assert_eq!(
+            home_query("crest://home/search?q=two+words%26"),
+            Some("two words&".into())
+        );
+        for input in [
+            "https://home/search?q=external",
+            "crest://home/searching?q=wrong-route",
+            "crest://home/search?q=one&q=two",
+            "crest://home/search?other=parameter",
+            "crest://home/search?q=fragment#extra",
+        ] {
+            assert!(home_query(input).is_none(), "{input}");
+        }
+    }
+}
 
 fn browser_id(browser: Option<&mut Browser>) -> Option<i32> {
     browser.map(|browser| browser.identifier())
@@ -177,6 +213,40 @@ wrap_display_handler! {
                 state.title_changed(id, &title.to_string());
             }
         }
+        fn on_favicon_urlchange(&self, browser: Option<&mut Browser>, icons: Option<&mut CefStringList>) {
+            let (Some(state), Some(browser), Some(icons)) = (self.state.upgrade(), browser, icons) else { return };
+            let (Some(frame), Some(host)) = (browser.main_frame(), browser.host()) else { return };
+            let page_url = CefString::from(&frame.url()).to_string();
+            let Ok(page) = Url::parse(&page_url) else { return };
+            let origin = page.origin();
+            // The CEF iterator uses the mutable list wrapper supplied to this callback.
+            let Some(icon) = std::mem::take(icons).into_iter().find(|icon| {
+                is_web_url(icon) && Url::parse(icon).is_ok_and(|icon| icon.origin() == origin)
+            }) else { return };
+            let id = browser.identifier();
+            if state.begin_favicon(id, &page_url) {
+                let mut callback = Favicon::new(self.state.clone(), id, page_url);
+                host.download_image(Some(&CefString::from(icon.as_str())), 1, 16, 0, Some(&mut callback));
+            }
+        }
+    }
+}
+
+wrap_download_image_callback! {
+    struct Favicon { state: Weak<WindowState>, browser_id: i32, page_url: String }
+    impl DownloadImageCallback {
+        fn on_download_image_finished(
+            &self,
+            _image_url: Option<&CefString>,
+            _status: i32,
+            image: Option<&mut Image>,
+        ) {
+            if let (Some(state), Some(image)) = (self.state.upgrade(), image)
+                && image.is_empty() == 0
+            {
+                state.favicon_loaded(self.browser_id, &self.page_url, image.clone());
+            }
+        }
     }
 }
 
@@ -222,8 +292,8 @@ wrap_request_handler! {
             browser: Option<&mut Browser>,
             frame: Option<&mut Frame>,
             request: Option<&mut Request>,
-            _user_gesture: i32,
-            _is_redirect: i32,
+            user_gesture: i32,
+            is_redirect: i32,
         ) -> i32 {
             let (Some(frame), Some(request)) = (frame, request) else { return 0 };
             if frame.is_main() == 0 {
@@ -234,7 +304,16 @@ wrap_request_handler! {
                 return 0;
             }
             if let (Some(state), Some(id)) = (self.state.upgrade(), browser_id(browser)) {
-                state.page_status(id, "Navigation to that address was blocked");
+                if user_gesture != 0
+                    && is_redirect == 0
+                    && CefString::from(&frame.url()).to_string() == HOME
+                    && CefString::from(&request.method()).to_string() == "GET"
+                    && let Some(input) = home_query(&url)
+                {
+                    state.submit_home_search(id, input);
+                } else {
+                    state.page_status(id, "Navigation to that address was blocked");
+                }
             }
             1
         }
@@ -429,18 +508,20 @@ wrap_scheme_handler_factory! {
             use std::sync::{Arc, Mutex};
 
             let request = request?;
-            if CefString::from(&request.url()).to_string() != HOME
-                || CefString::from(&request.method()).to_string() != "GET"
-            {
+            if CefString::from(&request.method()).to_string() != "GET" {
                 return None;
             }
-            let html = include_bytes!("home.html").to_vec();
-            let mut reader = ByteReadHandler::new(Arc::new(Mutex::new(ByteStream::new(html))));
+            let (mime, bytes): (&str, &[u8]) = match CefString::from(&request.url()).to_string().as_str() {
+                HOME => ("text/html", include_bytes!("home.html")),
+                HOME_WALLPAPER => ("image/webp", include_bytes!("deep-water.webp")),
+                _ => return None,
+            };
+            let mut reader = ByteReadHandler::new(Arc::new(Mutex::new(ByteStream::new(bytes.to_vec()))));
             let stream = stream_reader_create_for_handler(Some(&mut reader))?;
             let mut headers = CefStringMultimap::new();
-            headers.append("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; base-uri 'none'; form-action 'none'");
+            headers.append("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; img-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'");
             headers.append("X-Content-Type-Options", "nosniff");
-            Some(StreamResourceHandler::new(200, "OK".into(), "text/html".into(), Some(headers), Some(stream)))
+            Some(StreamResourceHandler::new(200, "OK".into(), mime.into(), Some(headers), Some(stream)))
         }
     }
 }

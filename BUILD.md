@@ -30,13 +30,13 @@ Run the packager from the project directory. It needs `dpkg-deb`, `dpkg-shlibdep
 bash packaging/package-linux.sh
 ```
 
-The package appears as `dist/crest-browser_0.1.0_amd64.deb`. It includes the matching CEF runtime, third-party notices, the Crest icon, and a desktop launcher. The package uses the Chromium user-namespace sandbox. The verified host is Ubuntu 26.04.1 with unprivileged user namespaces available. This is a local developer package.
+The package appears as `dist/crest-browser_0.1.1_amd64.deb`. It includes the matching CEF runtime, third-party notices, the Crest icon, and a desktop launcher. The package uses the Chromium user-namespace sandbox. The verified host is Ubuntu 26.04.1 with unprivileged user namespaces available. This is a local developer package.
 
 To try the exact packaged binary without installing it, extract it to a temporary directory.
 
 ```sh
 crest_package_dir=$(mktemp -d)
-dpkg-deb -x dist/crest-browser_0.1.0_amd64.deb "$crest_package_dir"
+dpkg-deb -x dist/crest-browser_0.1.1_amd64.deb "$crest_package_dir"
 "$crest_package_dir/usr/bin/crest-browser"
 ```
 
@@ -50,4 +50,4 @@ python3 tests/smoke.py target/debug/crest-browser
 python3 tests/smoke.py target/release/crest-browser
 ```
 
-The desktop smoke test needs Python 3, Xvfb, xdotool, D-Bus, and a working GTK or GTK portal save dialog. It creates its own display, HTTP fixture, profile, and download directory. It exercises JavaScript execution, navigation, live tab switching, restart and link handoff, bookmarks, layout persistence, a native download, geolocation denial, sandboxed subprocesses, and DevTools and window shutdown.
+The desktop smoke test needs Python 3, Xvfb, xdotool, D-Bus, and a working GTK or GTK portal save dialog. It creates its own display, HTTP fixture, profile, and download directory. It exercises new-tab search, the tab rail, tab picker, layout switching and persistence, JavaScript execution, navigation, restart and link handoff, bookmarks, a native download, geolocation denial, sandboxed subprocesses, and DevTools and window shutdown.

@@ -7,6 +7,7 @@
 | Linux x86-64 desktop | Exercised on Ubuntu 26.04.1 under X11. A local amd64 package contains the desktop launcher and CEF runtime. Native Wayland behavior and other distributions need qualification. |
 | HTTP and HTTPS | Chromium handles network and page rendering. The browser was exercised against a local HTTP fixture and the public HTTPS site `example.org`. |
 | Local profile | Tabs, selected tab, recent history, bookmarks, search provider, and tab layout persist. Chromium maintains the profile's cookies and web storage. |
+| Browser controls | Vertical and horizontal layouts, the new-tab search form, and the tab picker were exercised on Ubuntu under X11. Existing profiles keep their stored layout. |
 | Downloads | A native save dialog chooses the path. The activity menu is session-scoped. |
 | Developer Tools | The current tab can open an integrated Chromium DevTools window. |
 | Website permissions | The current policy blocks requests for sensitive device and site permissions. Per-site grants are a future feature. |

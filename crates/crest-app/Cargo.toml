@@ -8,3 +8,5 @@ publish.workspace = true
 cef = { version = "=156.4.0", default-features = false, features = ["sandbox"] }
 crest-core = { path = "../crest-core" }
 dirs = "6"
+tiny-skia = { version = "0.12", default-features = false, features = ["std", "simd"] }
+url = "2"

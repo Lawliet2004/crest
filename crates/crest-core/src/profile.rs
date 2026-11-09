@@ -14,9 +14,18 @@ const MAX_PROFILE_BYTES: u64 = 32 * 1024 * 1024;
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum TabLayout {
-    #[default]
     Horizontal,
+    #[default]
     Vertical,
+}
+
+impl TabLayout {
+    pub fn other(self) -> Self {
+        match self {
+            Self::Horizontal => Self::Vertical,
+            Self::Vertical => Self::Horizontal,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Eq, PartialEq, Serialize)]

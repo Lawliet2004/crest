@@ -1,6 +1,6 @@
 # Crest Browser
 
-Crest Browser is a Rust-first desktop browser for Linux x86-64. This first build uses Chromium through CEF for web content and Rust for the browser controls and local state.
+Crest Browser is a Rust-first desktop browser for Linux x86-64. It uses Chromium through CEF for web content and Rust for the browser controls and local state.
 
 ## Run
 
@@ -15,10 +15,10 @@ The first build downloads the pinned CEF runtime. Keep the executable alongside 
 
 | Task | Control |
 | --- | --- |
-| Search or enter an address | Address bar or **Ctrl+L** |
+| Search or enter an address | Address bar, new-tab search field, or **Ctrl+L** |
 | Open or close a tab | **Ctrl+T** or **Ctrl+W** |
-| Switch tabs | Click a tab or use **Ctrl+Tab** and **Ctrl+Shift+Tab** |
-| Switch between horizontal and vertical tabs | **Menu → Use vertical tabs** or **Use horizontal tabs** |
+| Switch tabs | Click a tab or use **Ctrl+Tab** and **Ctrl+Shift+Tab**. The Crest button opens a list of all tabs. |
+| Switch between horizontal and vertical tabs | Click the layout icon or press **Ctrl+Shift+Y**. New profiles start with the vertical rail. |
 | Bookmark a website | Star button or **Ctrl+D** |
 | Open saved pages | **Library → Bookmarks** or **Recent history** |
 | Choose a search provider | **Menu → Search engine** |

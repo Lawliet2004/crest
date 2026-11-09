@@ -187,7 +187,11 @@ def smoke(binary, directory, env, origin):
     with launch(binary, env, directory) as process:
         main = desktop.window("^Crest Browser$")
         desktop.focus(main)
-        desktop.navigate(origin + "/a")
+        until("new-tab page", lambda: profile(directory).get("tabs", [{}])[0].get("title") == "New tab")
+        # The new-tab search field sits in the center of the fixed Xvfb viewport.
+        desktop.click(500, 361)
+        desktop.xdo("type", "--clearmodifiers", origin + "/a")
+        desktop.key("Return")
         desktop.title(main, "Crest fixture A")
         desktop.key("alt+Left")
         until("back to new tab", lambda: desktop.xdo("getwindowname", main) == "Crest Browser")
@@ -199,20 +203,29 @@ def smoke(binary, directory, env, origin):
         desktop.key("ctrl+t")
         desktop.navigate(origin + "/b")
         desktop.title(main, "Crest fixture B")
-        desktop.key("ctrl+Tab")
+        # The first tab is visible at the top of the default vertical rail.
+        desktop.click(29, 115)
         desktop.title(main, "Crest fixture A count 1")
 
-        # Menu is the rightmost toolbar control on the fixed Xvfb viewport.
-        desktop.click(1086, 69)
-        desktop.key("Down", "Return")
+        desktop.click(1058, 23)
         until(
-            "vertical layout to persist",
-            lambda: profile(directory).get("settings", {}).get("tab_layout") == "vertical",
+            "horizontal layout to persist",
+            lambda: profile(directory).get("settings", {}).get("tab_layout") == "horizontal",
         )
         desktop.focus(main)
         desktop.click(540, 300)
         desktop.key("j")
         desktop.title(main, "Crest fixture A count 2")
+
+        desktop.click(29, 23)
+        desktop.key("Down", "Down", "Return")
+        desktop.title(main, "Crest fixture B")
+        desktop.key("ctrl+Tab", "ctrl+shift+y")
+        desktop.title(main, "Crest fixture A count 2")
+        until(
+            "vertical layout to persist",
+            lambda: profile(directory).get("settings", {}).get("tab_layout") == "vertical",
+        )
 
         desktop.key("n")
         desktop.title(main, "Crest fixture popup")

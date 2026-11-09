@@ -1,5 +1,6 @@
 mod chrome;
 mod engine;
+mod icons;
 mod window;
 
 use cef::*;

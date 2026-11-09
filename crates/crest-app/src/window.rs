@@ -25,6 +25,7 @@ pub(crate) enum Action {
     FocusAddress,
     ResetAddress,
     Submit(String),
+    SubmitHome(TabId, String),
     Navigate(String),
     OpenInTab(String, bool),
     Back,
@@ -32,7 +33,7 @@ pub(crate) enum Action {
     Reload,
     Home,
     Bookmark,
-    Layout(TabLayout),
+    ToggleLayout,
     Search(SearchEngine),
     DevTools,
     Show(Menu),
@@ -40,6 +41,7 @@ pub(crate) enum Action {
 
 #[derive(Clone, Copy)]
 pub(crate) enum Menu {
+    Tabs,
     Library,
     Downloads,
     Settings,
@@ -50,6 +52,8 @@ struct Tab {
     page: Page,
     view: Option<BrowserView>,
     browser_id: Option<i32>,
+    favicon_requested: bool,
+    favicon: Option<Image>,
 }
 
 #[derive(Clone)]
@@ -116,6 +120,8 @@ impl WindowState {
                 page,
                 view: None,
                 browser_id: None,
+                favicon_requested: false,
+                favicon: None,
             })
             .collect();
         Ok(Shared::new_cyclic(|self_ref| Self {
@@ -200,11 +206,11 @@ impl WindowState {
             .tabs
             .borrow()
             .iter()
-            .map(|tab| (tab.id, tab.page.clone()))
+            .map(|tab| (tab.id, tab.page.clone(), tab.favicon.clone()))
             .collect();
         chrome.update_tabs(&pages, self.selected.get());
         let browser = self.active_browser();
-        if let Some((_, page)) = pages.iter().find(|(id, _)| *id == self.selected.get()) {
+        if let Some((_, page, _)) = pages.iter().find(|(id, ..)| *id == self.selected.get()) {
             if reset_address || chrome.address.has_focus() == 0 {
                 chrome.show_address(&page.url);
             }
@@ -290,6 +296,8 @@ impl WindowState {
             page,
             view,
             browser_id,
+            favicon_requested: false,
+            favicon: None,
         });
         self.rebuild_tabs();
         id
@@ -455,6 +463,20 @@ impl WindowState {
         }
     }
 
+    pub(crate) fn submit_home_search(&self, browser_id: i32, input: String) {
+        if let Some(tab) = self.tab_id(browser_id) {
+            self.dispatch(Action::SubmitHome(tab, input));
+        }
+    }
+
+    fn submit(&self, input: &str) {
+        let search = self.profile.borrow().settings.search_engine;
+        match resolve(input, search) {
+            Ok(url) => self.navigate(&url),
+            Err(error) => self.status(error),
+        }
+    }
+
     pub(crate) fn address_changed(&self, browser_id: i32, url: String) {
         if self.closing.get() || !is_page_url(&url) {
             return;
@@ -471,12 +493,42 @@ impl WindowState {
                 tab.page.clone()
             } else {
                 tab.page = Page::new(url);
+                tab.favicon_requested = false;
+                tab.favicon = None;
                 tab.page.clone()
             }
         };
         self.profile.borrow_mut().record_visit(&page);
         self.schedule_refresh();
         self.schedule_save();
+    }
+
+    pub(crate) fn begin_favicon(&self, browser_id: i32, page_url: &str) -> bool {
+        if self.closing.get() {
+            return false;
+        }
+        let mut tabs = self.tabs.borrow_mut();
+        let Some(tab) = tabs.iter_mut().find(|tab| {
+            tab.browser_id == Some(browser_id) && tab.page.url == page_url && !tab.favicon_requested
+        }) else {
+            return false;
+        };
+        tab.favicon_requested = true;
+        true
+    }
+
+    pub(crate) fn favicon_loaded(&self, browser_id: i32, page_url: &str, favicon: Image) {
+        if self.closing.get() {
+            return;
+        }
+        let mut tabs = self.tabs.borrow_mut();
+        if let Some(tab) = tabs
+            .iter_mut()
+            .find(|tab| tab.browser_id == Some(browser_id) && tab.page.url == page_url)
+        {
+            tab.favicon = Some(favicon);
+            self.schedule_refresh();
+        }
     }
 
     pub(crate) fn title_changed(&self, browser_id: i32, title: &str) {
@@ -590,11 +642,12 @@ impl WindowState {
             Action::PreviousTab => self.step_tab(true),
             Action::FocusAddress => self.focus_address(),
             Action::ResetAddress => self.refresh(true),
-            Action::Submit(input) => {
-                let search = self.profile.borrow().settings.search_engine;
-                match resolve(&input, search) {
-                    Ok(url) => self.navigate(&url),
-                    Err(error) => self.status(error),
+            Action::Submit(input) => self.submit(&input),
+            Action::SubmitHome(tab, input) => {
+                if self.selected.get() == tab
+                    && self.active_page().is_some_and(|page| page.url == HOME)
+                {
+                    self.submit(&input);
                 }
             }
             Action::Navigate(url) => self.navigate(&url),
@@ -624,7 +677,8 @@ impl WindowState {
                     self.schedule_save();
                 }
             }
-            Action::Layout(layout) => {
+            Action::ToggleLayout => {
+                let layout = self.profile.borrow().settings.tab_layout.other();
                 self.profile.borrow_mut().settings.tab_layout = layout;
                 self.rebuild_tabs();
                 self.refresh(false);
@@ -673,6 +727,20 @@ impl WindowState {
             menu.set_enabled(id, i32::from(enabled));
         };
         match menu {
+            Menu::Tabs => {
+                let selected = self.selected.get();
+                for tab in self.tabs.borrow().iter() {
+                    let label = if tab.id == selected {
+                        format!("✓  {}", tab.page.label())
+                    } else {
+                        tab.page.label().to_owned()
+                    };
+                    add(&model, &label, Some(Action::Select(tab.id)));
+                }
+                model.add_separator();
+                add(&model, "New tab (Ctrl+T)", Some(Action::NewTab));
+                add(&model, "Close active tab (Ctrl+W)", Some(Action::CloseTab));
+            }
             Menu::Library => {
                 let profile = self.profile.borrow();
                 for (id, label, entries) in [
@@ -713,11 +781,11 @@ impl WindowState {
             }
             Menu::Settings => {
                 let settings = self.profile.borrow().settings;
-                let (layout_label, next_layout) = match settings.tab_layout {
-                    TabLayout::Horizontal => ("Use vertical tabs", TabLayout::Vertical),
-                    TabLayout::Vertical => ("Use horizontal tabs", TabLayout::Horizontal),
+                let layout_label = match settings.tab_layout {
+                    TabLayout::Horizontal => "Use vertical tabs",
+                    TabLayout::Vertical => "Use horizontal tabs",
                 };
-                add(&model, layout_label, Some(Action::Layout(next_layout)));
+                add(&model, layout_label, Some(Action::ToggleLayout));
                 if let Some(group) =
                     model.add_sub_menu(10_003, Some(&CefString::from("Search engine")))
                 {
@@ -801,6 +869,12 @@ wrap_window_delegate! {
         fn can_maximize(&self, _window: Option<&mut Window>) -> i32 { 1 }
         fn can_minimize(&self, _window: Option<&mut Window>) -> i32 { 1 }
         fn can_close(&self, _window: Option<&mut Window>) -> i32 { 1 }
+
+        fn on_theme_colors_changed(&self, window: Option<&mut Window>, _chrome_theme: i32) {
+            if let Some(window) = window {
+                Chrome::apply_palette(window);
+            }
+        }
 
         fn linux_window_properties(
             &self,
